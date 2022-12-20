@@ -1,6 +1,6 @@
 Dan Drennan final project for STAT647: Spatial Statistics at
 Texas A&M University, College Station, Texas, USA. The project
-reviews the work in Kidd and Katzfuss (2022, Bayesian Analysis)[^1].
+reviews the work in Kidd and Katzfuss (2022, Bayesian Analysis)<sup>1</sup>.
 The review presents their work as a climate emulation problem, reviews
 past work in Gaussian processes, and presents their work as a covariance
 selection problem. Additional topics covered in the review are neighborhood
@@ -16,4 +16,4 @@ figures referenced when reproducing captions.
 This is a reupload of the original work to remove pycache files entirely from
 the repository, so the version history is squashed entirely.
 
-[^1] [https://doi.org/10.1214/21-BA1273](https://doi.org/10.1214/21-BA1273)
+<sup>1</sup>[https://doi.org/10.1214/21-BA1273](https://doi.org/10.1214/21-BA1273)
