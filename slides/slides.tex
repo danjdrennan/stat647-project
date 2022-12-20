@@ -1,0 +1,259 @@
+\documentclass[letterpaper, 10pt, compress]{beamer}
+\usepackage{slidestyle}
+
+% Title info
+\title[STAT 647 Project Presentation]{Covariance Estimation for Nonstationary Spatial Processes}
+\author[Drennan]{Daniel Drennan}
+\institute[TAMU Stats]{Department of Statistics\\Texas A\&M University}
+\date{01 December 2022}
+
+% Start of document
+\begin{document}
+
+
+\begin{frame}[plain]
+    \titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+    \tableofcontents
+\end{frame}
+
+
+% Introduction
+\section[Intro]{Introduction}
+
+\begin{frame}{Nonstationary Spatial Processes}
+    Consider a nonstationary spatial Gaussian process $y(s_i) = w(s_i) + \epsilon(s_i)$
+    with $\bw \sim \GP(\bzero, \bV)$ and $\bepsilon \sim N(\bzero, \tau^2\bI)$,
+    where $\tau$ is either zero or small
+    \medskip\par
+
+    Suppose the region of interest $\calD \subset \bbR^{2}$ is a regular lattice
+    over a region of the globe
+    \medskip\par
+
+    \textbf{Goal}: Estimate the covariance $\Var(\by) = \bSigma = \bV + \tau^2\bI$
+\end{frame}
+
+\begin{frame}{Application to Climate Models}
+    The approach is relevant for global (regional) climate models on a regular grid
+    \medskip\par
+
+    Climate models are based on complex physical systems which are expensive to simulate
+    \medskip\par
+
+    The aims with statistical models of climate are to \emph{cheaply}
+    \begin{itemize}
+        \item Train on a small number of expensive climate simulations
+        \item Make inferences about behavior over subregions (in either support)
+        \item Predictions as so-called emulations of regional/global climate models
+    \end{itemize}
+    
+    \begin{center}
+    \includegraphics[height=1.25in]{trefht.png}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Modeling Idea}
+    Discuss Kidd and Katzfuss (2022) \cite{kidd-katzfuss2021} approach:
+    \medskip\par
+    
+    Given $\by^{(1)}, \dots, \by^{(n)} \sim p(\cdot | \bSigma)$, can we
+    nonparametrically model the entries of
+    \[
+        \bSigma^{-1} = \bL \bD \bL^{\top}
+    \]
+    using Bayesian regression models?
+    \medskip\par
+    \textbf{Notes}:
+    \begin{itemize}
+        \item $\bL$ is lower triangular with unit diagonal,
+        \item $\bD = \text{diag}(d_1, \dots, d_N) \succ \bzero$
+        \item \emph{A priori}, this involves $\calO(N^2)$ terms
+    \end{itemize}
+    
+    A Vecchia approximation imposes sparsity in $\bSigma^{-1}$ to reduce the
+    number of parameters to estimate in the covariance matrix
+\end{frame}
+
+
+\section[Stat Model]{A Nonparametric Model of the Covariance Function}
+
+\begin{frame}{Data Assumptions}
+    Assume $\bY \in \bbR^{n \times N}$ is a centered data matrix from an approximately
+    noiseless, nonstationary Gaussian Process
+    \medskip\par
+    
+    Model each row of $\bY$ as a marginalized spatial GP
+    \[
+        \by^{(\ell)} | \bSigma \overset{iid}{\sim} \calN_N(\bzero, \bSigma),
+        quad \ell = 1, \dots, n
+    \]
+
+    Apply Vecchia approximation with $m$ neighbors and a maximin ordering of a
+    regular grid
+    \begin{itemize}
+        \item Maximin ordering described by Guinness (2018) \cite{Guinness2018}
+    \end{itemize}
+
+    Can write the Vecchia approximation as
+    \[
+        p(y_i^{(\ell)}\, |\, \by_{1:i-1}^{(\ell)}, \bSigma) =
+        p(y_i^{(\ell)}\, |\, \by_{c_m(i)}^{(\ell)}, \bSigma),
+    \]
+    where $c_m(i)$ is an index of nearest neighbors in the maximin ordering
+\end{frame}
+
+\begin{frame}{Heuristic Orderings}
+    \begin{center}
+        \includegraphics[height=1.5in]{schafer-pca.png}
+    \end{center}
+    \textbf{Figure 2.2} in Schafer et al. (2021) \cite{Schafer2021}
+    \bigskip\par
+
+    \begin{itemize}
+        \item Maximin ordering is a heuristic ordering
+        \item In a regular grid, it decays proportional to $i^{-1/d}$
+        \item Can use Euclidean norm or a correlation distance as the metric
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Cholesky Factors}
+    The Vecchia assumption induces sparsity in $\bL$ from $\bSigma^{-1} = \bL \bD \bL$ 
+    \nocite{Huang2006}
+    \medskip\par
+
+    Let $\bl_i = \bL_{c_m(i), i}$ be the nonzero entries from column $i$ of $\bL$
+    and an $n \times m$ design matrix $\bX_i = \bY_{c_m(i), i}^{\top}$
+    \medskip\par
+
+    Combining the previous steps, a marginal likelihood can be written as
+    \begin{align*}
+        p(\bY | \bSigma)
+        &= \prod_{i=1}^{N} p(\by_i | \by_{1:i-1}, \bSigma) \\
+        &= \prod_{i=1}^{N} p(\by_i | \bX_i \bl_i, d_i \bI_n)
+    \end{align*}
+    for variance components $d_i$ in $\bD$
+\end{frame}
+
+\begin{frame}{Regression Models}
+    In $\prod_{i=1}^{N} p(\by_i | \bX_i \bl_i, d_i \bI_n)$, use a Normal--Inverse Gamma
+    regression model so
+    \begin{align*}
+        \bl_i | d_i, \btheta &\overset{ind}{\sim} \calN(\bzero, d_i \bV_i), \\
+        d_i | \btheta &\overset{ind}{\sim} \IG(\alpha_i, \beta_i), \\
+        i &= 1, \dots, N
+    \end{align*}
+
+    $\btheta$ is a vector of hyperparameters determining $m, \bV_i, \alpha_i$, and $\beta_i$
+    \medskip\par
+    
+    Can put priors on $\btheta$ to follow a Mat\'{e}rn or other kernel
+    \medskip\par
+
+    Now estimating $\calO(Nm)$ parameters instead of $N^2$
+\end{frame}
+
+\begin{frame}{Inference}
+    Inference and prediction (climate model emulation) in the statistical model
+    is gained through $\btheta$ through integrated likelihood
+    \medskip\par
+
+    The model is Gaussian, so the integrated likelihood $p(\bY | \btheta)$ has
+    an analytic form
+    \medskip\par
+
+    Can use Empirical Bayes to estimate $\hat{\btheta} = \argmax_{\btheta} p(\bY | \btheta)$
+    or sample from the posterior $p(\btheta | \bY)$ directly
+    \medskip\par
+
+    The posterior must be sampled using an adaptive Metropolis-Hastings algorithm
+    with complexity $\calO(N(mn^2 + m^3))$ in each step
+\end{frame}
+
+
+\section[Performance]{Simulation and Application Performance}
+
+\begin{frame}{Performance}
+    \begin{center}
+        \includegraphics[width = 100mm]{kidd-figs.png}
+    \end{center}
+    Kidd and Katzfuss (2022) Figures 6 (left and middle) and 7 (right) \cite{kidd-katzfuss2021}
+    \medskip\par
+
+    Simulation study with $n = 20$ instances of a GP using a Mat\'{e}rn kernel in the
+    left two panels, and increasing $n$ in the right panel
+    $M(\bh | \sigma^2 = 3, \nu = 1, \alpha = 0.25)$
+    \begin{itemize}
+        \item $N = 900$ locations on a unit square
+        \item SCOV = Sample Covariance estimate
+        \item Posterior inference obtained using 50,000 samples of $\btheta$ with
+        500 samples post burn-in and thinning
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Data Example}
+    \begin{center}
+        \includegraphics[width=100mm]{kidd-application.png}
+    \end{center}
+    Kidd and Katzfuss (2022) Figures 1 (left, data) and 10 (right, PPD samples)
+    of surface temperature anomalies using a CESM climate model \cite{kidd-katzfuss2021}
+    \medskip\par
+
+    Treats temperatures on July 1 in years 402--500 as independent realizations of
+    temperature
+    \medskip\par
+
+    Grid size is $N = 81 \times 96 (= 7776)$ pixels with 98 temperature samples
+    per pixel
+    \medskip\par
+
+    Data are standardized to have unit mean and variance at each pixel
+\end{frame}
+
+
+\section[Summary]{Summary and References}
+
+\begin{frame}{Summary}
+    \textbf{Model achievements}:
+    \begin{itemize}
+        \item Highly parallel (fast computations)
+        \item Works well for climate model emulation
+        \item Outperforms other methods estimating nonstationary spatial fields
+    \end{itemize}
+    \medskip\par
+
+    \textbf{Model shortcomings}:
+    \begin{itemize}
+        \item Doesn't allow for out-of-support predictions or use of covariate information
+        \item Rigid assumption in the regressions (linear regressions)
+        \item Assumes noiseless response surface (or neglible measurement error)
+    \end{itemize}
+    \medskip\par
+
+    This was a discussion paper in Bayesian Analysis with interesting commentaries
+\end{frame}
+
+\begin{frame}{Extensions}
+    A more flexible generalization is possible using the idea of \emph{transport measures}
+    \medskip\par
+
+    A version of this is described in Katzfuss and Schafer (2021)
+    \cite{katzfuss-schafer-2021-tm}
+    \begin{itemize}
+        \item Estimates a lower triangular map related to $\bSigma^{-1}$
+        \item Replaces regressions with GP regressions
+        \item Can replace normal error assumption with Dirichlet process mixtures
+        \item Can extend by putting covariate information into the GP regressions
+        with spatial response $\by$
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Selected References}
+    \footnotesize
+    \printbibliography
+\end{frame}
+
+
+\end{document}

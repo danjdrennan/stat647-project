@@ -1,0 +1,369 @@
+\documentclass[letterpaper]{article}
+\usepackage{settings}
+\graphicspath{{../figs/}}
+\usepackage{cite}
+\usepackage[round]{natbib}
+\bibliographystyle{abbrvnat}
+
+\title{
+  A Covariance Selection Model for Nonstationary Gaussian Processes \\[1ex]
+  \Large A Review of Kidd and Katzfuss (2021)
+}
+\author{
+  Dan Drennan\thanks{Department of Statistics, Texas A\&M University} \thanks{Project code: \url{https://www.github.com/danjdrennan/stat647-project.git}}\\
+  \small{\texttt{danjdrennan@stat.tamu.edu}}
+}
+\date{15 December 2022}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  I review \citet{Kidd2021} and the discussions from the paper. I start by
+  considering statistical methods for climate modeling, present spatial Gaussian
+  processes in this light, and discuss relevant work on dimensionality reduction
+  and nonstationary process modeling. In the process I discuss neighborhood
+  selection from a graphical modeling perspective as well as covariance selection
+  as a general modeling problem surveyed by \citet{Pourahmadi2011}. Then I summarize
+  the model and simulations from the paper. Finally I address my own experience
+  trying to implement this model and close with a discussion on the paper. 
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}\label{sec:introduction}
+
+  What methods can statistics offer to climate science? Global Earth System
+  Climate Models (ESMs) are engineered to be spatiotemporal models with millions
+  of parameters estimating hundreds or thousands of features
+  \citep[cf. \S~28.3.2 by Stephenson]{HandbookEES}. These models are crafted
+  using a small number of hyperparameters and tuned to minimize errors when
+  compared to historical data \citep{Masson2011,Knutti2013,Tilmes2018}. Model comparison,
+  bias quantification, and averaging have been studied extensively using classes
+  of mixed effects \citep{Jun2008} and Bayesian ANOVA models
+  \citep{Kaufman2010,Tingley2012,Geinitz2015,Cressie2022}. Alternatively,
+  model emulation has gained recent attention \citep{Castruccio2014}. An emulation
+  task is to estimate a climate distribution from samples, say
+  $\by_{ijk} \sim p(\cdot)$,\footnote{In this notation, suppose the $i$th ensemble
+  from the $j$th model designed by the $k$th modeling group} and cheaply
+  sample from the statistical model instead of rerunning a comparatively expensive
+  ESM.
+  
+  The outputs from an ESM are multivariate climate variables on a regular lattice,
+  representing spatially and temporally binned data. As in the Community ESM
+  \citep{Tilmes2018} the quantization in an ESM model will correspond to a spatial
+  field with $\mathcal{O}(10^{5})$ grid cells. Temporal averaging is done from daily
+  to monthly scales, but can be ignored in this review. Despite this quantization
+  the outputs are often modeled continuously using spatial Gaussian processes (SGPs)
+  \citep{Heaton2019,Huang2021}. Two challenges to using SGPs in model emulation
+  are the dimensionality and covariance assumptions---both intrinsically related
+  to the covariance selection problem \citep{Dempster1972}. Low rank and sparse
+  model approximations can reduce the complexity of matrix inversion, and classes
+  of nonstationary covariance functions have been developed to make SGPs more flexible.
+
+  Low rank models are reviewed by Wikle \citep[\S~8.3]{HandbookSpatialStats},
+  where the process is modeled on a lower dimensional subspace and then expanded
+  to the observed dimension. Regressing the observed process with dimension $N$
+  on $p\ (p \ll N)$ knots reduces the cost of matrix inversion from $\mathcal{O}(N^3)$
+  to $\mathcal{O}(N p^2)$. However, this approach has no guarantee of bounding
+  $p$ to an adequately small dimension. An alternative is to impose sparsity on
+  the number of correlated terms.
+
+  Sparsity in a covariance matrix can be modeled agnostic of space or time using
+  Gaussian graphical models, where zeros in the precision matrix $\Sigma^{-1}$
+  indicate conditional independence among variables \citep[Chapter~3]{HandbookGraphicalModels}.
+  Space agnostic approaches to variable and neighbor selection using graphical
+  models use LASSO \citep{Meinshausen2006} and graphical LASSO \citep{Friedman2008}.
+  \citet{Huang2010} adapts earlier work to consider spatial neighborhoods as well.
+  However, dparsity in spatial models is traditionally imposed using the Vecchia
+  approximation \citep{Vecchia1988,Stein2004}. \citet{Datta2016a} use this approach
+  to construct the NNGP, making spatially varying coefficient models \cite{Gelfand2003}
+  faster to approximate and imposing parsimony in the covariance matrix. These models
+  and others using Vecchia approximations performed well in the case study
+  competitions surveyed by \citet{Heaton2019} and \citet{Huang2021}. \citet{Katzfuss2021a}
+  reviews Vecchia approximations and \citet{Katzfuss2020} considers their application
+  to computer experiments. These methods all tend to assume an isotropic covariance
+  function in practice. Alternatively \citet{Gelfand2004} uses coregionalization
+  to allow for nonstationary GP models and \citet{Gelfand2005b} introduces Dirichlet
+  Process Mixtures to avoid making the GP assumption.
+
+  The methods described before vary in their approach to modeling nonstationarity
+  with only the approaches by Gelfand explicitly dealing with the problem. An
+  early approach using dimension expansion and spline interpolations is described
+  by \citet{Sampson1992} and \citet{Damian2001}. \citet{Paciorek2006} uses convolutions
+  to develop a class of nonstationary covariance functions which average the variation
+  between locations. \cite{Fuentes2008} takes a spectral approach to derive a
+  similar class of functions, but which are defined over space and time. More
+  recent approaches to addressing nonstationary use local likelihood methods
+  \citep{Anderes2011} and kernel process mixing \citep{Fuentes2013}.
+  
+  Inspired by \citet{Huang2006}, \citet{Kidd2021} propose a method of nonstationary
+  covariance selection paired to sparse modeling via Vecchia approximations. In
+  what remains I review the \citet{Kidd2021} result and discuss its relevance to
+  the climate model emulation problem posed before. Section~2 presents the model.
+  Section~3 surveys their results, and Section~4 concludes.
+
+
+\section{Model}\label{sec:model}
+
+  Let $\by^{(1)}, \dots, \by^{(n)} \overset{ind}{\sim} \mathcal{N}_{N}(0, \Sigma)$ be
+  samples from an $N$ dimensional SGP with covariance $\Sigma$. Assume also that
+  the points are a response over a region of interest $\mathcal{D} \subset \R^{p}$.
+  The goal in this model is to estimate the $N \times N$ covariance matrix $\Sigma$
+  in situations where $n$ is 100 samples or fewer and $N \sim \mathcal{O}(10^{5})$.
+  The approach uses a regression-based covariance selection model similar to ones
+  described in \cite{Daniels2002} and \citet{Huang2006}. Write the modified Cholesky
+  factor of the precision matrix as
+  \begin{equation}
+    \Sigma^{-1} = T D^{-1} T^{\top}.
+    \label{eqn:cholesky-decomp}
+  \end{equation}
+  In Equation~\eqref{eqn:cholesky-decomp} $T$ is lower triangular with unit diagonal
+  and $D^{-1}$ is a diagonal matrix of precisions for each location. Note this approach
+  generalizes the Vecchia approximation when we assume a Gaussian model for the
+  data because zeros in the precision matrix correspond to conditionally independent
+  observations. That is, $\Sigma_{ij}^{-1} = 0$ implies $y_{i} \perp y_{j}\ |\ y_{\mathcal{I}}$,
+  where $\mathcal{I} = \{k \in \mathbb{N}: 1 \leq k \leq N\}\ \backslash\ \{i, j\}$.
+
+  Unlike time series applications, spatial data lack an inherent ordering. However
+  the decomposition in~\eqref{eqn:cholesky-decomp} implies an ordering of the data
+  \citep{Pourahmadi2011}. \citet{Guinness2018} demonstrated that a maxmin ordering
+  leads to sharp estimates of SGP models. Thus, assume the columns of
+  \begin{equation*}
+    \bY = \begin{pmatrix}
+      y_{1}^{(1)} & \cdots & y_{N}^{(1)} \\
+      y_{2}^{(2)} & \cdots & y_{N}^{(2)} \\
+        \vdots    & \ddots &  \vdots \\
+      y_{n}^{(1)} & \cdots & y_{N}^{(n)} \\
+    \end{pmatrix}
+    \in \R^{n \times N},
+    \qquad (n \ll N)
+  \end{equation*}
+  are permuted to follow a maxmin ordering.
+
+  \subsection{Model Likelihood}\label{subsec:model-likelihood}
+
+  Denote the $i$th location and $j$th sample by $y_{i}^{(j)}$ and the $m$ nearest
+  neighbors to $y_{i}^{(j)}$ by $c_{m}(i)$. The likelihood and its Vecchia
+  approximation can then be written as
+  \begin{align}
+    p(\bY\ |\ \Sigma)
+    &= \prod_{i=1}^{N} p(\by_{i}\ |\ \by_{1:i-1}, \Sigma) \nonumber \\
+    &= \prod_{i=1}^{N} p(\by_{i}\ |\ \by_{c_m(i)}, \Sigma).
+    \label{eqn:vecchia-likelihood}
+  \end{align}
+  To write the conditional distributions, write the components from~\eqref{eqn:cholesky-decomp}
+  so that
+  \begin{itemize}
+    \item $\bt_{i}$ is the $i$th column of $T$,
+    \item $d_{i} = \bD_{ii}$ is the variance at location $i$, and
+    \item $\bX_{i} = Y_{c_m(i)} \in \R^{n \times m}$ is a matrix from $i$th column of $Y$. 
+  \end{itemize}
+  Note each $\bX_{i}$ has $n$ rows and the $m$ nonzero entries from the Vecchia
+  approximation. Then
+  \begin{equation}
+    p(\bY\ |\ \Sigma) = \prod_{i=1}^{N}
+    \mathcal{N}_n(\by_{i} | \bX_{i}\bt_{i}, d_{i}\bI_{n}).
+    \label{eqn:conditional-likelihood}
+  \end{equation}
+  This reduces the estimation problem from estimating $N^2$ parameters to estimating
+  $\mathcal{O}(nm^2)$ terms. It also transforms the estimation problem from one
+  with a positive definiteness constraint on $\Sigma$ to an unconstrained
+  regression estimation problem \citep{Pourahmadi2011}.
+
+  \subsection{Bayesian Regressions}\label{subsec:bayes-regressions}
+
+  Approaching the regressions in \S~\ref{subsec:model-likelihood} using Bayesian
+  regressions allows us to quantify uncertainty in the covariance terms. The natural
+  approach is to model each regression hierarchically using a Normal--Inverse Gamma
+  (NIG) conjugate model with priors
+  \begin{equation*}
+    \bt_{i}\ |\ d_{i}, \theta \overset{ind}{\sim} \mathcal{N}_{n}(0, d_{i}\bV_{i})
+    \quad\text{and}\quad
+    d_{i} | \theta \overset{ind}{\sim} \mathcal{IG}(\alpha_{i}, \beta_{i}).
+  \end{equation*}
+  Then the hierarchical model is
+  $p(\theta)p(\bt_{i}, d_{i}\ | \theta)p(\by_{i} | \bt_{i}, d_{i})$. Due to the
+  conjugacy between $p(\bt_{i}, d_{i}\ |\ \theta)$ and $p(\by_{i}\ |\ \bt_{i}, \d_{i})$,
+  it is well-known that the posterior is
+  \begin{equation}
+    p(\theta)p(\bt_{1}, \dots, \bt_{N}, d_{1}, \dots, d_{N}\ |\ \bY, \theta).
+    \label{eqn:posterior-distribution}
+  \end{equation}
+  The posterior can explicitly be written as
+  \begin{equation}
+    p(\theta)p(\bt_{1}, \dots, \bt_{N}, d_{1}, \dots, d_{N}\ |\ \bY, \theta) =
+    p(\theta)\prod_{i=1}^{N}
+    \mathcal{N}_{n}(\cdot\ |\ \tilde{\bt}_{i}, d_{i}\bG_{i})
+    \mathcal{IG}(\cdot\ |\ \tilde{\alpha}_{i}, \tilde{\beta}_{i})
+    \label{eqn:posterior-terms}
+  \end{equation}
+  with posterior terms
+  \begin{itemize}
+    \item $\tilde{\bt}_{i} = \bG_{i}\bX_{i}\by_{i}$,
+    \item $\bG_{i} = (\bX_{i}^{\top}\bX_{i} + \bV_{i})^{-1}$,
+    \item $\tilde{\alpha}_{i} = \alpha_{i} + n/2$, and
+    \item $\tilde{\beta}_{i} = \beta_{i} + (||\by_{i}||^{2} + ||\bG_{i}^{-1/2}\,\tilde{\bt}_{i}||^{2})/2$.
+  \end{itemize}
+
+  This setup can be efficiently parallelized on a CPU or GPU. The parallelization
+  makes computations even on large datasets efficient to run using a laptop. The
+  complexity is $\mathcal{O}(Nm^2)$. Even for large $N$, the model can be fit
+  in minutes.
+    
+  \subsection{Modeling Hyperparameters}\label{subsec:hyperparameters}
+
+  The hierarchical model stated in Equation~\eqref{eqn:posterior-distribution}
+  can include hyperparameters $\theta$. \citet{Kidd2021} propose using a set
+  of hyperparameter $\theta = (\theta_{1}, \theta_{2}, \theta_{3})$ to shrink
+  the covariance estimate towards an isotropic Mat\'{e}rn covariance function.
+  They describe $\theta_1$ as corresponding to the marginal variance of the data,
+  and $\theta_2$ and $\theta_3$ as modeling the range and smoothness of the data.
+  They also use $\theta_3$ to fix the number of neighbors used in the approximation.
+  To model $\theta$ in an unconstrained space, they assume an improper, flat prior
+  on $p(\log \theta)$, letting $\log \theta$ be uniform on $\R^{3}$.
+
+  Consider the prior $d_{i} \sim \mathcal{IG}(\alpha_{i}, \beta_{i})$. A limiting
+  case for the covariance is $\Cov(s_i, s_j) = \theta_{1}\exp\{-\theta_{2}||s_{i}-s_{j}||/2\}$,
+  assuming an exponential covariance. The $d_{i}$'s correspond to conditional
+  variances $d_{i} = \Var(y_{i}^{(j)} | \by_{c_m(i)}^{(j)})$ using the nearest
+  neighbor calculation. Taking only one nearest neighbor, the conditional variance
+  is the so-called nugget effect, and
+  \begin{equation*}
+    d_{i} = \theta_{1}\left(1 - e^{-\theta_{2}||s_{i} - s_{c_{1}(i)}}\right).
+  \end{equation*}
+  Moreover, $||s_{i} - s_{c_m(i)}|| \approx i^{-1/p}$ in a maxmin ordering over
+  the unit cube $[0, 1]^{p}$. Thus, the variance can be approximated by
+  writing $d_{i} = \theta_{1}f_{\theta_{2}}(i)$, where
+  $f_{\theta_2}(i) = 1 - \exp\{0\theta_{2}(i)^{-1/p}\}$.
+  This approximation is used to model the expectation of $d_{i}$ in the prior
+  with $\E d_{i}\; |\; \theta = \beta_{i}(\alpha_{i} - 1)^{-1} = \theta_{1}f_{\theta_{2}}(i)$.
+  Using the first two moments of $d_{i}$ to relate $\theta_{1}$ and $f_{\theta_{2}}$
+  to the priors $\alpha_{i}$ and $\beta_{i}$ leads to estimates $\alpha_{i} = 6$
+  and $\beta_{i} = 5\theta_{1}f_{\theta_{2}}(i)$.
+
+  Section~1.3 of \citet{Schafer2021a} describes conditions to obtain
+  $\epsilon$-accurate sparse Cholesky factors under certain conditions. Theorem~2.1
+  of \citet{Schafer2021a} proves the result, and it is used by \citet{Kidd2021}
+  to make a prior assumption on the rate of variance decay for the $\bt_{i}$'s.
+  For $\bV_{i} = \text{diag}\{v_{i1}, \dots, v_{im}\}$, set
+  $v_{ik} = e^{-\theta_{3} k}(\theta_{1}f_{\theta_{2}}(i))^{-1}$. Note this is
+  normalizing each entry $v_{ik}$ by $\E d_{i}\ |\ \theta$ to write
+  $\bt_{i} | \theta \sim \mathcal{N}_{n}(0, d_{i}\bI_{n})$.
+
+  The last choice determines the number of neighbors to use in each approximation.
+  For this choice they set $m = \argmax_{k}\{e^{-\theta_{3} k} > 0.001\}$, where
+  $k$ is a positive integer. A rigorous explanation for this choice is not given.
+  It is claimed to be the information available from data to propagate into $\theta$.
+  
+  \subsection{Parameter Estimation and Inference}\label{subsec:estimation}
+
+  The model described in \S~\ref{subsec:model-likelihood}--\ref{subsec:hyperparameters}
+  can be estimated using MAP estimation or through MCMC sampling. MAP estimation
+  involves marginalizing over the $\bt_{i}$'s and $d_{i}$'s and minimizing the
+  negative integrated likelihood
+  \begin{equation}
+    -\log p(\bY | \theta) \propto \sum_{i=1}^{N}
+    \frac{1}{2} \log\frac{|\bG_{i}|}{|\bV_{i}|} +
+    \log\frac{\beta_{i}^{\alpha_{i}}}{\tilde{\beta}_{i}^{\tilde{\alpha}_{i}}} +
+    \log\frac{\Gamma(\tilde{\alpha}_{i})}{\Gamma(\alpha_{i})}.
+    \label{eqn:nll}
+  \end{equation}
+  Instead, a fully Bayesian treatment would sample from $p(\theta\ |\ \bY)$
+  using a Metropolis--Hastings algorithm. The authors note high correlation
+  between $\theta_{1}$ and $\theta_{2}$ in their formulation, causing the
+  sampler to converge slowly.
+
+  \subsection{Posterior Predictive Sampling}\label{subsec:ppd-sampling}
+
+  Posterior samples are easily obtained using this method by drawing a sample
+  $\bz^{\star} \sim \Phi_{N}$ and computing $\by^{\star} = (\bT^{\top})^{-1}\bD^{1/2}\bz^{\star}$.
+  Drawing iid samples from $\Phi$ can be done instantly. In the case when a MAP
+  estimate for $\bT$ and $\bD$ is used, sampling from the SGP $p(\ \cdot\ |\ \Sigma)$
+  can be done in about $\mathcal{O}(Nm)$ linear time.
+
+\section{Results}\label{sec:results}
+  
+  \begin{figure}[ht]
+    \centering
+    \includegraphics[width=\textwidth]{kidd-logkl.png}
+    \caption{
+      Figure~7 from \citet{Kidd2021}. Varying samples drawn from Mat\'{e}rn
+      covariance function with $\sigma^2 = 3$, $\nu = 1$, and $\phi = 0.25$
+      (variance, smoothness, spatial range).
+    }
+    \label{fig:logkl}
+  \end{figure}
+
+  The proposed model is ultimately a regression-based covariance selection
+  model. They compare their method estimation using the sample covariance function,
+  which is known case to perform poorly when $n \ll N$ \citep{Pourahmadi2011};
+  to the MLE of their model (no shrinkage); to LASSO with $\by_{1:i-1}$ as
+  predictors; to spatial LASSO; and to auto fixed rank kriging. The training
+  data for their comparison was 20 samples from an SGP with Mat\'{e}rn covariance,
+  setting the variance of the kernel to 3, the smoothness to 1, and the range
+  to 0.25. The grid size used was 900 locations chosen uniformly over $[0, 1]^{2}$
+  (30 points along each axis). This was the best case scenario for their comparison
+  and it outperformed the candidate models they compared to. Other simulations
+  shown in the paper were similar, with the proposed model superior to the
+  candidates it was compared against. Figure~\ref{fig:logkl} is Figure 7 from
+  their paper. This experiment is identical to the one described before but
+  varying the number of samples from the SGP.
+
+
+\section{Code Implementation}\label{sec:implementation}
+
+  For this review I tried also reimplementing this model in Python from scratch.
+  I was able to write an almost fully working implementation of the model in
+  about two days.\footnote{Code for this implementation is available at
+  \url{https://www.github.com/danjdrennan/stat647-project.git}.} My implementation
+  is in a custom GP class using Pytorch and GPytorch as the backend, and would
+  have used MAP estimation instead of MCMC sampling. An experiment I wanted to try,
+  which I'll address further in \S~\ref{sec:discussion}, was to compare the
+  Metropolis--Hastings sampler discussed in the paper with a Laplace approximation
+  or HMC-based sampler. The paper noted that chains mixed slowly because of high
+  correlations between the $\theta_{1}$ and $\theta_{2}$ hyperparameters.
+
+
+\section{Discussion}\label{sec:discussion}
+
+  \citet{Kidd2021} propose a Bayesian nonparametric model for covariance selection
+  when data are assumed to be well-approximated by a nonstationary SGP. In
+  \S~\ref{sec:introduction} I framed the problem as one in climate model emulation.
+  As \citet{Banerjee2014} note, a Vecchia approximation with ordered spatial data
+  is problematic if interpolation to previously unobserved locations is necessary.
+  In the climate emulation task I present, however, observations are drawn from
+  an ESM on a global lattice. In this setting the model summarized in \S~\ref{sec:model}
+  is ideal for modeling univariate climate variables. The problem involves a
+  high dimensional spatial grid with a small number of samples to draw inference
+  from.
+
+  Even in the model emulation setting---which I argue is where this model is most
+  relevant---however, the nonstationary SGP assumption seems difficult to justify.
+  This is addressed in the generalization \citet{Katzfuss2021b}, which relaxes the
+  SGP assumption and estimates the regressions nonparametrically instead (via GP
+  regressions). Still in both cases it remains a problem to extend the models to
+  a multivariate case and possibly also to a spatiotemporal case in order for
+  these emulation models to be more useful tools in climate science.
+
+  The commentary from discussants to the paper were more insightful than my own.
+  Heaton points to identifiability, arguing that the sample size $n$ must be greater
+  than the number of neighbors for the parameters $\bt_{i}$ and $d_{i}$ to be identifiable.
+  Azizi et al. raise an interesting question about using this method for functional
+  data analyses in non-spatial settings, particularly to adapt the parameterization
+  of $\bV_{i}$ to allow off-diagonal entries. Peluso draws similarity between
+  this method and one proposed in \citet{Ben-David2011}. Li and Shand ask whether
+  $m$ can vary from location to location. To this point, I am not certain that
+  the additional parameters would be necessary. Instead it seems likely the posterior
+  maps would shrink irrelevant regression coefficients to zero. If this were the
+  case, then it would be enough to know $m$ was large enough to accommodate the
+  most dense vector in the approximation. Both Banerjee and Peruzzi and Heaton
+  point out that prediction cannot be done at unobserved locations using this
+  method. In a climate emulation setting, that is not a problem. It would be
+  problematic for someone trying to use this model in other contexts.
+
+
+\bibliography{export}
+    
+\end{document}
